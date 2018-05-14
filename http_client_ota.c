@@ -13,7 +13,8 @@
 #include <espressif/esp_system.h>
 #include <espressif/esp_common.h>
 #include <espressif/esp_system.h>
-#include "mbedtls/sha256.h"
+
+#include "sha256.h"
 #include "http_client_ota.h"
 #include "rboot-api.h"
 #include "rboot.h"
@@ -33,8 +34,7 @@
 #define MAX_IMAGE_SIZE        0x100000 /*1MB images max at the moment */
 #define READ_BUFFER_LEN       512
 
-#define SHA256_SIZE_BIN       32
-#define SHA256_SIZE_STR       SHA256_SIZE_BIN * 2
+#define SHA256_SIZE_STR       SHA256_BLOCK_SIZE * 2
 #define SHA256_CONV_STEP_SIZE 4
 
 #if SECTOR_SIZE % READ_BUFFER_LEN != 0
@@ -45,7 +45,8 @@
 #define vTaskDelayMs(ms) vTaskDelay((ms) / portTICK_PERIOD_MS)
 
 static ota_info *ota_inf;
-static mbedtls_sha256_context *sha256_ctx;
+
+static SHA256_CTX *sha256_ctx;
 
 static uint32_t flash_offset;
 static uint32_t flash_limits;
@@ -62,7 +63,7 @@ static char *SHA256_wrt_ptr;
 static unsigned int ota_firmaware_dowload_callback(char *buf, uint16_t size)
 {
     if (ota_inf->checkSHA256)
-        mbedtls_sha256_update(sha256_ctx, (const unsigned char *) buf, size);
+        sha256_update(sha256_ctx, (const unsigned char *) buf, size);
 
     if (flash_offset + size > flash_limits) {
         DEBUG_PRINT("Flash Limits override");
@@ -142,13 +143,13 @@ OTA_err ota_update(ota_info *ota_info_par)
     }
 
     if (ota_inf->checkSHA256) {
-        sha256_ctx     = malloc(sizeof(mbedtls_sha256_context));
-        SHA256_output  = malloc(SHA256_SIZE_BIN);
-        SHA256_dowload = malloc(SHA256_SIZE_BIN);
-        SHA256_str     = malloc(SHA256_SIZE_STR + 1);
+        sha256_ctx     = malloc(sizeof(SHA256_CTX));
+        SHA256_output  = malloc(SHA256_BLOCK_SIZE);
+        SHA256_dowload = malloc(SHA256_BLOCK_SIZE);
+        SHA256_str     = malloc((SHA256_BLOCK_SIZE * 2) + 1);
         SHA256_wrt_ptr = SHA256_str;
-        SHA256_str[SHA256_SIZE_STR] = '\0';
-        mbedtls_sha256_init(sha256_ctx);
+        SHA256_str[(SHA256_BLOCK_SIZE * 2)] = '\0';
+        sha256_init(sha256_ctx);
     }
 
     DEBUG_PRINT("HTTP client task starting");
@@ -190,7 +191,7 @@ OTA_err ota_update(ota_info *ota_info_par)
         http_inf.final_cb       = SHA256_check_callback;
         http_inf.buffer_full_cb = SHA256_check_callback;
 
-        memset(SHA256_dowload, 0, SHA256_SIZE_BIN);
+        memset(SHA256_dowload, 0, SHA256_BLOCK_SIZE);
         memset(SHA256_str, 0, SHA256_SIZE_STR);
 
         err = HttpClient_dowload(&http_inf);
@@ -218,8 +219,6 @@ OTA_err ota_update(ota_info *ota_info_par)
     http_inf.path           = firmwareFilePath;
     http_inf.final_cb       = ota_firmaware_dowload_callback;
     http_inf.buffer_full_cb = ota_firmaware_dowload_callback;
-    if (ota_inf->checkSHA256)
-        mbedtls_sha256_starts(sha256_ctx, 0);  // Start SHA256, not SHA224
 
     err = HttpClient_dowload(&http_inf);
 
@@ -231,10 +230,9 @@ OTA_err ota_update(ota_info *ota_info_par)
 
     if (ota_inf->checkSHA256) {
         char com_res;
-        mbedtls_sha256_finish(sha256_ctx, SHA256_output);
-        mbedtls_sha256_free(sha256_ctx);
+        sha256_final(sha256_ctx, SHA256_output);
 
-        com_res = !memcmp((void *) SHA256_output, (void *) SHA256_dowload, SHA256_SIZE_BIN);
+        com_res = !memcmp((void *) SHA256_output, (void *) SHA256_dowload, SHA256_BLOCK_SIZE);
         if (!com_res) {
             DEBUG_PRINT("SHA256 hash is not equal");
             err = HTTP_SHA_DONT_MATCH;

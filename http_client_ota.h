@@ -40,10 +40,11 @@ typedef enum {
 typedef struct {
     char *server;      /**< Server domain */
     char *port;        /**< Server port   */
-    char *path; /**< Server Path to dowload the new update binary */
-    char *basename; /**< Basename of the firmware update image. It will have a trailing underscore and slot number.
-                     e.g. basename "firmware" will turn to firmware_1.bin and firmware_1.sha256 for slot 1. */
-    bool checkSHA256; /**< if false the sha256 check will be skipped */
+    char *path;        /**< Server Path to dowload the new update binary */
+    char *basename;    /**< Basename of the firmware update image. It will have a trailing underscore and slot number.
+                            e.g. basename "firmware" will turn to
+                            "firmware_1.bin" and "firmware_1.sha256" for slot 1. */
+    bool checkSHA256;  /**< if false the sha256 hash check will be skipped */
 } ota_info;
 
 /**
